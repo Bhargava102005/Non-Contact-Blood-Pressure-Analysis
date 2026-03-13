@@ -1,0 +1,115 @@
+% Step 1: Load a video file
+videoReader = VideoReader('C:\Users\saiga\Downloads\PPG_Simulation_Project\PPG_Simulation_Project\WhatsApp Video 2024-11-15 at 18.12.37_d16ef5ae.mp4'); % Replace with your video file
+
+% Step 2: Initialize simulation for extracting RGB signals
+fs = 30;  % Sampling frequency (frames per second)
+frames = [];
+while hasFrame(videoReader)
+    frame = readFrame(videoReader); % Read frame-by-frame
+    
+    % Simulate face detection (assume the entire frame is ROI)
+    ROI = frame; % In simulation, assume the entire frame is the face
+
+    % Store RGB values from the ROI for synthetic signal generation
+    % Convert to grayscale and extract mean value (simplified approach)
+    grayFrame = rgb2gray(ROI);
+    frames = [frames; mean(grayFrame(:))]; % Store the mean gray value of each frame
+    
+    % Display the frame (Optional)
+    imshow(frame);
+    pause(0.03); % Simulate real-time playback (30 fps)
+end
+
+% Step 3: Simulate synthetic RGB signals (just using grayscale as a placeholder for simplicity)
+t = 0:1/fs:(length(frames)-1)/fs;  % Time vector based on the number of frames
+
+% Use synthetic signal based on frames (assuming grayscale values)
+meanR_values = 0.5*sin(2*pi*1*t) + 0.1*randn(size(t));  % Red channel
+meanG_values = 0.5*sin(2*pi*1.2*t) + 0.1*randn(size(t)); % Green channel
+meanB_values = 0.5*sin(2*pi*1.5*t) + 0.1*randn(size(t)); % Blue channel
+
+% Step 4: Visualize synthetic signals
+figure;
+plot(t, meanR_values, 'r', t, meanG_values, 'g', t, meanB_values, 'b');
+title('Simulated RGB Channel Signals');
+xlabel('Time (s)');
+ylabel('Amplitude');
+legend('Red', 'Green', 'Blue');
+
+% Step 5: Design Butterworth bandpass filter for heart rate frequency range
+lowCutoff = 0.7;  % Lower cutoff frequency (Hz)
+highCutoff = 4.0; % Upper cutoff frequency (Hz)
+[B, A] = butter(3, [lowCutoff/(fs/2), highCutoff/(fs/2)], 'bandpass');
+
+% Step 6: Filter each color channel signal
+filteredR = filtfilt(B, A, meanR_values);
+filteredG = filtfilt(B, A, meanG_values);
+filteredB = filtfilt(B, A, meanB_values);
+
+% Step 7: Plot filtered signals
+figure;
+plot(t, filteredR, 'r', t, filteredG, 'g', t, filteredB, 'b');
+title('Filtered RGB Channel Signals');
+xlabel('Time (s)');
+ylabel('Amplitude');
+legend('Filtered Red', 'Filtered Green', 'Filtered Blue');
+
+% Step 8: Combine filtered signals into a matrix
+X = [filteredR; filteredG; filteredB]';
+
+% Step 9: Perform Principal Component Analysis (PCA)
+[coeff, score, ~] = pca(X);
+
+% Step 10: Extract the first principal component (PPG signal)
+ppgSignal = score(:, 1); % First principal component
+
+% Step 11: Plot the extracted PPG signal
+figure;
+plot(t, ppgSignal);
+title('Extracted PPG Signal');
+xlabel('Time (s)');
+ylabel('Amplitude');
+
+% Step 12: Detect peaks in the PPG signal
+[peaks, locs] = findpeaks(ppgSignal, 'MinPeakDistance', fs * 0.5);
+
+% Step 13: Calculate heart rate (beats per minute)
+if length(peaks) > 1
+    heartRate = length(peaks) / (t(end) - t(1)) * 60; % bpm
+else
+    heartRate = NaN;
+    warning('Not enough peaks detected.');
+end
+
+% Display estimated heart rate
+disp(['Estimated Heart Rate: ', num2str(heartRate), ' bpm']);
+
+% Step 14: Calculate heart rate variability (HRV)
+HRV = std(diff(locs) / fs); % Heart rate variability
+features = [heartRate, HRV]; % Heart rate and HRV as features
+
+% Step 15: Load pre-trained blood pressure models
+load('bloodPressureLinearModel_SBP.mat'); % Load SBP model
+load('bloodPressureLinearModel_DBP.mat'); % Load DBP model
+
+% Step 16: Extract the linear model from the loaded structure
+% Assuming the model is stored as 'linearModel_SBP' and 'linearModel_DBP'
+% If the models are structures, ensure you reference the correct field for the model
+if isstruct(linearModel_SBP)
+    linearModel_SBP = linearModel_SBP.LinearModel; % Replace with the correct field name if different
+end
+if isstruct(linearModel_DBP)
+    linearModel_DBP = linearModel_DBP.LinearModel; % Replace with the correct field name if different
+end
+
+% Step 17: Ensure features are in a table format or numeric array for prediction
+% This step will depend on your model type, but usually, you can use a numeric array
+featuresTable = array2table(features, 'VariableNames', {'HeartRate', 'HRV'});
+
+% Step 18: Predict SBP and DBP using the features
+estimatedSBP = predict(linearModel_SBP, featuresTable);
+estimatedDBP = predict(linearModel_DBP, featuresTable);
+
+% Display results
+disp(['Estimated SBP: ', num2str(estimatedSBP), ' mmHg']);
+disp(['Estimated DBP: ', num2str(estimatedDBP), ' mmHg']);
